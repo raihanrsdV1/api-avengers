@@ -4,6 +4,7 @@ import com.careforall.payment.dto.PaymentGatewayRequest;
 import com.careforall.payment.dto.PaymentGatewayResponse;
 import com.careforall.payment.entity.Payment;
 import com.careforall.payment.repository.PaymentRepository;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,6 +20,7 @@ public class PaymentGatewayService {
 
     private final WebClient.Builder webClientBuilder;
     private final PaymentRepository paymentRepository;
+    private final EntityManager entityManager;
 
     @Value("${mock.gateway.url:http://mock-pg-service:8084}")
     private String mockGatewayUrl;
@@ -49,8 +51,10 @@ public class PaymentGatewayService {
                 payment.setPaymentGatewayId(response.getPaymentGatewayId());
                 payment.setStatus(Payment.PaymentStatus.PROCESSING);
                 paymentRepository.save(payment);
-                log.info("Payment sent to gateway. Gateway ID: {}, Status: {}",
-                        response.getPaymentGatewayId(), response.getStatus());
+                // Flush immediately to ensure gateway ID is in DB before webhook arrives
+                entityManager.flush();
+                log.info("Payment ID: {} updated with Gateway ID: {}, Status: {}. Flushed to DB.",
+                        payment.getId(), response.getPaymentGatewayId(), response.getStatus());
             } else {
                 log.warn("Received null or incomplete response from Mock Gateway. Response: {}", response);
                 payment.setStatus(Payment.PaymentStatus.FAILED);

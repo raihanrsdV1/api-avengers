@@ -6,6 +6,7 @@ import com.careforall.payment.entity.Payment;
 import com.careforall.payment.entity.Payment.PaymentStatus;
 import com.careforall.payment.repository.PaymentRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -31,6 +32,7 @@ public class PaymentProcessingService {
     private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper;
     private final PaymentGatewayService paymentGatewayService;
+    private final EntityManager entityManager;
 
     @Value("${idempotency.ttl-seconds:86400}")
     private long idempotencyTtl;
@@ -66,17 +68,20 @@ public class PaymentProcessingService {
                 .build();
 
         payment = paymentRepository.save(payment);
-        log.info("Created payment record: {}", payment.getId());
+        // Flush to ensure payment is committed to DB before calling gateway
+        entityManager.flush();
+        log.info("Created payment record: {} for pledge: {}", payment.getId(), event.getPledgeId());
 
         // Set idempotency key in Redis
         redisTemplate.opsForValue().set(redisKey, "processed", Duration.ofSeconds(idempotencyTtl));
 
         // Call Mock Gateway in a new transaction
+        log.info("Calling payment gateway for payment ID: {}", payment.getId());
         paymentGatewayService.processPaymentWithGateway(payment);
     }
 
     /**
-     * Handle webhook from Mock Gateway
+     * Handle webhook from Mock Gateway with retry logic
      */
     @Transactional
     public void handleWebhook(Map<String, Object> webhookData) {
@@ -92,12 +97,36 @@ public class PaymentProcessingService {
 
         log.info("Processing webhook for gateway ID: {}, status: {}", paymentGatewayId, status);
 
-        Payment payment = paymentRepository.findByPaymentGatewayId(paymentGatewayId)
-                .orElseThrow(() -> {
-                    log.error("Payment not found for gateway ID: {}. Available payments: {}",
-                            paymentGatewayId, paymentRepository.findAll().size());
-                    return new IllegalArgumentException("Payment not found for gateway ID: " + paymentGatewayId);
-                });
+        // Retry logic to handle race conditions with transaction commits
+        Payment payment = null;
+        int maxRetries = 5;
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            payment = paymentRepository.findByPaymentGatewayId(paymentGatewayId).orElse(null);
+
+            if (payment != null) {
+                log.info("Payment found on attempt {}/{} for gateway ID: {}",
+                        attempt, maxRetries, paymentGatewayId);
+                break;
+            }
+
+            if (attempt < maxRetries) {
+                log.warn("Payment not found for gateway ID: {} on attempt {}/{}. Retrying...",
+                        paymentGatewayId, attempt, maxRetries);
+                try {
+                    Thread.sleep(500); // Wait 500ms before retry
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("Interrupted while waiting for payment record", e);
+                }
+            }
+        }
+
+        if (payment == null) {
+            long totalPayments = paymentRepository.count();
+            log.error("Payment not found for gateway ID: {} after {} retries. Total payments in DB: {}",
+                    paymentGatewayId, maxRetries, totalPayments);
+            throw new IllegalArgumentException("Payment not found for gateway ID: " + paymentGatewayId);
+        }
 
         PaymentStatus newStatus = "CAPTURED".equals(status) ? PaymentStatus.CAPTURED : PaymentStatus.FAILED;
         payment.setStatus(newStatus);
