@@ -1,8 +1,10 @@
 package com.careforall.pledge.service;
 
 import com.careforall.pledge.config.RabbitMQConfig;
+import com.careforall.pledge.dto.PledgeCreatedEvent;
 import com.careforall.pledge.entity.OutboxEvent;
 import com.careforall.pledge.repository.OutboxEventRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -30,6 +32,7 @@ public class OutboxPublisher {
 
     private final OutboxEventRepository outboxEventRepository;
     private final RabbitTemplate rabbitTemplate;
+    private final ObjectMapper objectMapper;
 
     /**
      * Poll outbox events every 2 seconds
@@ -75,14 +78,15 @@ public class OutboxPublisher {
 
         // Publish to RabbitMQ
         try {
-            // Deserialize payload to Map to avoid double serialization
-            java.util.Map<String, Object> payloadMap = new com.fasterxml.jackson.databind.ObjectMapper()
-                    .readValue(event.getPayload(), java.util.Map.class);
+            // Deserialize payload to the actual event type for proper serialization
+            PledgeCreatedEvent pledgeEvent = objectMapper.readValue(
+                    event.getPayload(),
+                    PledgeCreatedEvent.class);
 
             rabbitTemplate.convertAndSend(
                     RabbitMQConfig.PLEDGE_EXCHANGE,
                     routingKey,
-                    payloadMap);
+                    pledgeEvent);
         } catch (Exception e) {
             log.error("Failed to deserialize event payload: {}", event.getPayload(), e);
             throw new RuntimeException("Failed to publish event", e);

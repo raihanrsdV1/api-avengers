@@ -1,8 +1,10 @@
 package com.careforall.payment.service;
 
 import com.careforall.payment.config.RabbitMQConfig;
+import com.careforall.payment.dto.DonationEvent;
 import com.careforall.payment.entity.OutboxEvent;
 import com.careforall.payment.repository.OutboxEventRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -30,6 +32,7 @@ public class OutboxPublisher {
 
     private final OutboxEventRepository outboxEventRepository;
     private final RabbitTemplate rabbitTemplate;
+    private final ObjectMapper objectMapper;
 
     /**
      * Poll outbox events every 2 seconds
@@ -74,10 +77,20 @@ public class OutboxPublisher {
                 event.getId(), RabbitMQConfig.DONATION_EXCHANGE, routingKey);
 
         // Publish to RabbitMQ
-        rabbitTemplate.convertAndSend(
-                RabbitMQConfig.DONATION_EXCHANGE,
-                routingKey,
-                event.getPayload());
+        try {
+            // Deserialize payload to the actual event type for proper serialization
+            DonationEvent donationEvent = objectMapper.readValue(
+                    event.getPayload(),
+                    DonationEvent.class);
+
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.DONATION_EXCHANGE,
+                    routingKey,
+                    donationEvent);
+        } catch (Exception e) {
+            log.error("Failed to deserialize event payload: {}", event.getPayload(), e);
+            throw new RuntimeException("Failed to publish event", e);
+        }
 
         // Mark as published
         event.setPublishedAt(LocalDateTime.now());
