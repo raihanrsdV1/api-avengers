@@ -1,5 +1,9 @@
 name: CI - Build and Test
 
+permissions:
+  contents: read
+  security-events: write
+
 on:
   push:
     branches: [ main, develop, 'claude/**' ]
