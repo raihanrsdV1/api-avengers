@@ -30,7 +30,7 @@ public class PaymentGatewayService {
                     .pledgeId(payment.getPledgeId())
                     .amount(payment.getAmount().doubleValue())
                     .campaignId(payment.getCampaignId())
-                    .userId(payment.getUserId())
+                    .userId(payment.getUserId() != null ? Long.valueOf(payment.getUserId()) : null)
                     .build();
 
             WebClient webClient = webClientBuilder.baseUrl(mockGatewayUrl).build();
