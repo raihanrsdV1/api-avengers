@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  postgres-payment:
+    image: postgres:15-alpine
+    container_name: careforall-postgres-payment
+    environment:
+      POSTGRES_DB: payment_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    networks:
+      - careforall-network
+
+  postgres-campaign:
+    image: postgres:15-alpine
+    container_name: careforall-postgres-campaign
+    environment:
+      POSTGRES_DB: campaign_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    networks:
+      - careforall-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: careforall-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - careforall-network
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: careforall-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - careforall-network
+
+  zipkin:
+    image: openzipkin/zipkin:latest
+    container_name: careforall-zipkin
+    ports:
+      - "9411:9411"
+    networks:
+      - careforall-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: careforall-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    networks:
+      - careforall-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: careforall-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    networks:
+      - careforall-network
+
+networks:
+  careforall-network:
+    driver: bridge

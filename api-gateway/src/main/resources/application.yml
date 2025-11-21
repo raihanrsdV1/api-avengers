@@ -1,0 +1,82 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      routes:
+        # Payment Service Routes
+        - id: payment-service
+          uri: lb://payment-service
+          predicates:
+            - Path=/api/v1/payment/**
+          filters:
+            - StripPrefix=0
+        
+        # Campaign Service Routes
+        - id: campaign-service
+          uri: lb://campaign-service
+          predicates:
+            - Path=/api/v1/campaign/**
+          filters:
+            - StripPrefix=0
+      
+      # Default filters applied to all routes
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+      
+      # Discovery locator configuration
+      discovery:
+        locator:
+          enabled: false
+
+# JWT Configuration
+jwt:
+  secret: ${JWT_SECRET:careforall-super-secret-key-for-jwt-signing-must-be-at-least-256-bits}
+  expiration: 86400000
+
+# Service Discovery (Manual for now, can be replaced with Eureka)
+# We'll use direct host resolution via Docker DNS
+payment-service:
+  url: ${PAYMENT_SERVICE_URL:http://localhost:8081}
+
+campaign-service:
+  url: ${CAMPAIGN_SERVICE_URL:http://localhost:8082}
+
+# Actuator Configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,gateway
+  endpoint:
+    health:
+      show-details: always
+  
+  # Distributed Tracing
+  tracing:
+    sampling:
+      probability: 1.0
+  
+  # Metrics
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+
+# Zipkin Configuration
+management.zipkin.tracing.endpoint: ${ZIPKIN_URL:http://localhost:9411/api/v2/spans}
+
+# Logging
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
+    com.careforall.gateway: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"

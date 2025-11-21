@@ -1,0 +1,32 @@
+# Prometheus Configuration for CareForAll Platform
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  
+scrape_configs:
+  # API Gateway
+  - job_name: 'api-gateway'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['api-gateway:8080']
+        labels:
+          application: 'api-gateway'
+          environment: 'production'
+  
+  # Payment Service
+  - job_name: 'payment-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['payment-service:8081']
+        labels:
+          application: 'payment-service'
+          environment: 'production'
+  
+  # Campaign Service
+  - job_name: 'campaign-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['campaign-service:8082']
+        labels:
+          application: 'campaign-service'
+          environment: 'production'

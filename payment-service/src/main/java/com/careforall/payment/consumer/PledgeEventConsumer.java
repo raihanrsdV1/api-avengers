@@ -1,0 +1,41 @@
+package com.careforall.payment.consumer;
+
+import com.careforall.payment.config.RabbitMQConfig;
+import com.careforall.payment.dto.PledgeCreatedEvent;
+import com.careforall.payment.service.PaymentProcessingService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.stereotype.Component;
+
+/**
+ * Pledge Event Consumer - Listens for pledge creation events
+ */
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class PledgeEventConsumer {
+
+    private final PaymentProcessingService paymentProcessingService;
+    private final ObjectMapper objectMapper;
+
+    /**
+     * Handle PLEDGE_CREATED events
+     */
+    @RabbitListener(queues = RabbitMQConfig.PLEDGE_CREATED_QUEUE)
+    public void handlePledgeCreated(PledgeCreatedEvent event) {
+        try {
+            log.info("Received PLEDGE_CREATED event for pledge: {}", event.getPledgeId());
+
+            // Process payment via Mock Gateway
+            paymentProcessingService.processPayment(event);
+
+            log.info("Successfully initiated payment processing for pledge: {}", event.getPledgeId());
+
+        } catch (Exception e) {
+            log.error("Error processing PLEDGE_CREATED event", e);
+            throw new RuntimeException("Failed to process pledge created event", e);
+        }
+    }
+}
