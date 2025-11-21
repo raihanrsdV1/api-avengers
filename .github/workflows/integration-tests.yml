@@ -208,7 +208,7 @@ jobs:
           done
 
       - name: Start infrastructure with Docker Compose
-        run: docker-compose -f docker-compose-infra.yml up -d
+        run: docker compose -f docker-compose-infra.yml up -d
 
       - name: Wait for infrastructure
         run: |
@@ -216,7 +216,7 @@ jobs:
           sleep 30
 
       - name: Build and start application services
-        run: docker-compose up -d --build api-gateway payment-service campaign-service pledge-service mock-pg-service
+        run: docker compose up -d --build api-gateway payment-service campaign-service pledge-service mock-pg-service
 
       - name: Wait for services to be ready
         run: |
@@ -237,7 +237,7 @@ jobs:
             sleep 5
           done
           echo "Services failed to start"
-          docker-compose logs
+          docker compose logs
           exit 1
 
       - name: Run E2E tests
@@ -247,8 +247,8 @@ jobs:
 
       - name: Display service logs on failure
         if: failure()
-        run: docker-compose logs
+        run: docker compose logs
 
       - name: Stop services
         if: always()
-        run: docker-compose down -v
+        run: docker compose down -v
