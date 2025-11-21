@@ -4,6 +4,7 @@ import com.careforall.payment.config.RabbitMQConfig;
 import com.careforall.payment.dto.PledgeCreatedEvent;
 import com.careforall.payment.service.PaymentProcessingService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -19,6 +20,12 @@ public class PledgeEventConsumer {
 
     private final PaymentProcessingService paymentProcessingService;
     private final ObjectMapper objectMapper;
+
+    @PostConstruct
+    public void init() {
+        log.info("PledgeEventConsumer initialized and listening for PLEDGE_CREATED events on queue: {}",
+                RabbitMQConfig.PLEDGE_CREATED_QUEUE);
+    }
 
     /**
      * Handle PLEDGE_CREATED events

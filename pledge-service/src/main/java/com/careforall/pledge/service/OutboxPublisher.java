@@ -5,6 +5,7 @@ import com.careforall.pledge.dto.PledgeCreatedEvent;
 import com.careforall.pledge.entity.OutboxEvent;
 import com.careforall.pledge.repository.OutboxEventRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -34,6 +35,12 @@ public class OutboxPublisher {
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
 
+    @PostConstruct
+    public void init() {
+        log.info("OutboxPublisher initialized and ready to publish events to RabbitMQ");
+        log.info("Polling interval: ${outbox.polling.interval:2000}ms");
+    }
+
     /**
      * Poll outbox events every 2 seconds
      * Fixed delay ensures we wait 2 seconds after the previous execution completes
@@ -41,15 +48,16 @@ public class OutboxPublisher {
     @Scheduled(fixedDelayString = "${outbox.polling.interval:2000}")
     @Transactional
     public void publishOutboxEvents() {
-        log.debug("OutboxPublisher polling for unpublished events...");
+        try {
+            log.debug("OutboxPublisher polling for unpublished events...");
 
-        // Find all unpublished events
-        List<OutboxEvent> unpublishedEvents = outboxEventRepository.findUnpublishedEvents();
+            // Find all unpublished events
+            List<OutboxEvent> unpublishedEvents = outboxEventRepository.findUnpublishedEvents();
 
-        if (unpublishedEvents.isEmpty()) {
-            log.debug("No unpublished events found");
-            return;
-        }
+            if (unpublishedEvents.isEmpty()) {
+                log.debug("No unpublished events found");
+                return;
+            }
 
         log.info("Found {} unpublished events to process", unpublishedEvents.size());
 
@@ -67,6 +75,8 @@ public class OutboxPublisher {
                     log.error("Event {} exceeded max retries, manual intervention required", event.getId());
                 }
             }
+        } catch (Exception e) {
+            log.error("Error in OutboxPublisher scheduled task: {}", e.getMessage(), e);
         }
     }
 
