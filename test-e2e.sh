@@ -10,13 +10,17 @@ echo "🚀 CareForAll Platform - End-to-End Test Script"
 echo "================================================"
 echo ""
 
-# Check if infrastructure is running
+# Check if infrastructure is running (skip in CI)
 echo "📋 Checking infrastructure..."
-if ! docker ps | grep -q careforall-rabbitmq; then
-    echo -e "${RED}❌ Infrastructure not running. Please run: docker-compose up -d${NC}"
-    exit 1
+if [ -z "$CI" ]; then
+    if ! docker ps | grep -q careforall-rabbitmq; then
+        echo -e "${RED}❌ Infrastructure not running. Please run: docker-compose up -d${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✅ Infrastructure is running${NC}"
+else
+    echo -e "${GREEN}✅ Running in CI - infrastructure managed by workflow${NC}"
 fi
-echo -e "${GREEN}✅ Infrastructure is running${NC}"
 echo ""
 
 # Base URLs
