@@ -41,10 +41,13 @@ public class OutboxPublisher {
     @Scheduled(fixedDelayString = "${outbox.polling.interval:2000}")
     @Transactional
     public void publishOutboxEvents() {
+        log.debug("OutboxPublisher polling for unpublished events...");
+
         // Find all unpublished events
         List<OutboxEvent> unpublishedEvents = outboxEventRepository.findUnpublishedEvents();
 
         if (unpublishedEvents.isEmpty()) {
+            log.debug("No unpublished events found");
             return;
         }
 
@@ -73,7 +76,7 @@ public class OutboxPublisher {
     private void publishEvent(OutboxEvent event) {
         String routingKey = determineRoutingKey(event.getEventType());
 
-        log.debug("Publishing event {} to exchange {} with routing key {}",
+        log.info("Publishing event {} to exchange {} with routing key {}",
                 event.getId(), RabbitMQConfig.PLEDGE_EXCHANGE, routingKey);
 
         // Publish to RabbitMQ
