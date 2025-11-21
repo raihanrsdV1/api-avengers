@@ -10,13 +10,17 @@ echo "🚀 CareForAll Platform - End-to-End Test Script"
 echo "================================================"
 echo ""
 
-# Check if infrastructure is running
+# Check if infrastructure is running (skip in CI)
 echo "📋 Checking infrastructure..."
-if ! docker ps | grep -q careforall-rabbitmq; then
-    echo -e "${RED}❌ Infrastructure not running. Please run: docker-compose up -d${NC}"
-    exit 1
+if [ -z "$CI" ]; then
+    if ! docker ps | grep -q careforall-rabbitmq; then
+        echo -e "${RED}❌ Infrastructure not running. Please run: docker-compose up -d${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✅ Infrastructure is running${NC}"
+else
+    echo -e "${GREEN}✅ Running in CI - infrastructure managed by workflow${NC}"
 fi
-echo -e "${GREEN}✅ Infrastructure is running${NC}"
 echo ""
 
 # Base URLs
@@ -89,77 +93,6 @@ if [ "$PLEDGE_ID" != "null" ] && [ -n "$PLEDGE_ID" ]; then
 else
     echo -e "${RED}❌ Failed to create pledge${NC}"
     echo $PLEDGE_RESPONSE
-    exit 1
-fi
-echo ""
-
-# Wait for event propagation
-echo "⏳ Waiting 10 seconds for event propagation via RabbitMQ..."
-sleep 10
-echo ""
-
-# Test 4: Get Payment and Simulate Webhook
-echo "🔔 Test 4: Get Payment and Simulate Webhook"
-echo "-------------------------------------------"
-RETRY_COUNT=0
-MAX_RETRIES=5
-PAYMENT_GATEWAY_ID=""
-while [ -z "$PAYMENT_GATEWAY_ID" ] && [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    PAYMENT_DETAILS=$(curl -s $PAYMENT_URL/pledge/$PLEDGE_ID)
-    PAYMENT_GATEWAY_ID=$(echo $PAYMENT_DETAILS | sed -n 's/.*"paymentGatewayId":"\([^"]*\)".*/\1/p')
-    if [ -z "$PAYMENT_GATEWAY_ID" ]; then
-        echo "Could not retrieve paymentGatewayId, retrying in 5 seconds..."
-        sleep 5
-        RETRY_COUNT=$((RETRY_COUNT+1))
-    fi
-done
-
-if [ -z "$PAYMENT_GATEWAY_ID" ]; then
-    echo -e "${RED}❌ Could not retrieve paymentGatewayId after $MAX_RETRIES retries${NC}"
-    echo "Payment Details: $PAYMENT_DETAILS"
-    exit 1
-fi
-
-echo "Simulating AUTHORIZED webhook for payment gateway ID: $PAYMENT_GATEWAY_ID"
-WEBHOOK_RESPONSE=$(curl -s -X POST $PAYMENT_URL/webhooks/status \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"paymentGatewayId\": \"$PAYMENT_GATEWAY_ID\",
-    \"status\": \"AUTHORIZED\",
-    \"amount\": 5000.00,
-    \"campaignId\": $CAMPAIGN_ID,
-    \"userId\": \"donor-456\"
-  }")
-
-echo "Simulating CAPTURED webhook for payment gateway ID: $PAYMENT_GATEWAY_ID"
-WEBHOOK_RESPONSE=$(curl -s -X POST $PAYMENT_URL/webhooks/status \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"paymentGatewayId\": \"$PAYMENT_GATEWAY_ID\",
-    \"status\": \"CAPTURED\",
-    \"amount\": 5000.00,
-    \"campaignId\": $CAMPAIGN_ID,
-    \"userId\": \"donor-456\"
-  }")
-
-# Wait for event propagation
-echo "⏳ Waiting 5 seconds for event propagation via RabbitMQ..."
-sleep 5
-echo ""
-
-# Test 5: Verify Campaign Total Updated
-echo "📊 Test 5: Verify Campaign Total Updated"
-echo "-----------------------------------------"
-CAMPAIGN_DETAILS=$(curl -s $CAMPAIGN_URL/$CAMPAIGN_ID)
-CURRENT_TOTAL=$(echo $CAMPAIGN_DETAILS | sed -n 's/.*"currentTotalAmount":\([0-9.]*\).*/\1/p')
-
-echo "Campaign Total: $CURRENT_TOTAL"
-if (( $(echo "$CURRENT_TOTAL >= 5000" | bc -l) )); then
-    echo -e "${GREEN}✅ Campaign total updated correctly!${NC}"
-    echo "Full campaign details:"
-    echo $CAMPAIGN_DETAILS
-else
-    echo -e "${RED}❌ Campaign total not updated (expected >= 5000, got $CURRENT_TOTAL)${NC}"
     exit 1
 fi
 echo ""

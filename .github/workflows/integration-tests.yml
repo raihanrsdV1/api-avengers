@@ -1,0 +1,253 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [ main, develop, 'claude/**' ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  integration-test:
+    name: Run Integration Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres-payment:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: payment_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      postgres-campaign:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: campaign_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      postgres-pledge:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: pledge_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      rabbitmq:
+        image: rabbitmq:3.12-management-alpine
+        ports:
+          - 5672:5672
+          - 15672:15672
+        env:
+          RABBITMQ_DEFAULT_USER: guest
+          RABBITMQ_DEFAULT_PASS: guest
+        options: >-
+          --health-cmd "rabbitmq-diagnostics ping"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build all services
+        run: |
+          for service in payment-service campaign-service pledge-service mock-pg-service; do
+            echo "Building $service..."
+            cd $service
+            mvn clean package -DskipTests -B
+            cd ..
+          done
+
+      - name: Start Payment Service
+        run: |
+          cd payment-service
+          DB_HOST=localhost DB_PORT=5432 DB_NAME=payment_db DB_USER=postgres DB_PASSWORD=postgres \
+          REDIS_HOST=localhost RABBITMQ_HOST=localhost RABBITMQ_USER=guest RABBITMQ_PASSWORD=guest \
+          nohup java -jar target/payment-service-1.0.0.jar > payment-service.log 2>&1 &
+          echo $! > payment-service.pid
+          cd ..
+
+      - name: Start Campaign Service
+        run: |
+          cd campaign-service
+          DB_HOST=localhost DB_PORT=5433 DB_NAME=campaign_db DB_USER=postgres DB_PASSWORD=postgres \
+          RABBITMQ_HOST=localhost RABBITMQ_USER=guest RABBITMQ_PASSWORD=guest \
+          nohup java -jar target/campaign-service-1.0.0.jar > campaign-service.log 2>&1 &
+          echo $! > campaign-service.pid
+          cd ..
+
+      - name: Start Pledge Service
+        run: |
+          cd pledge-service
+          DB_HOST=localhost DB_PORT=5434 DB_NAME=pledge_db DB_USER=postgres DB_PASSWORD=postgres \
+          RABBITMQ_HOST=localhost RABBITMQ_USER=guest RABBITMQ_PASSWORD=guest \
+          nohup java -jar target/pledge-service-1.0.0.jar > pledge-service.log 2>&1 &
+          echo $! > pledge-service.pid
+          cd ..
+
+      - name: Start Mock PG Service
+        run: |
+          cd mock-pg-service
+          nohup java -jar target/mock-pg-service-1.0.0.jar > mock-pg-service.log 2>&1 &
+          echo $! > mock-pg-service.pid
+          cd ..
+
+      - name: Wait for services to be ready
+        run: |
+          echo "Waiting for services to start..."
+          sleep 30
+
+          # Check health endpoints
+          for i in {1..30}; do
+            if curl -f http://localhost:8081/api/v1/payment/health && \
+               curl -f http://localhost:8082/api/v1/campaign/health && \
+               curl -f http://localhost:8083/api/v1/pledge/health && \
+               curl -f http://localhost:8084/api/v1/mock-gateway/health; then
+              echo "All services are healthy!"
+              exit 0
+            fi
+            echo "Waiting for services... attempt $i/30"
+            sleep 5
+          done
+          echo "Services failed to start"
+          exit 1
+
+      - name: Run integration tests
+        run: |
+          chmod +x test-e2e.sh
+          ./test-e2e.sh
+
+      - name: Display service logs
+        if: always()
+        run: |
+          echo "=== Payment Service Logs ==="
+          cat payment-service/payment-service.log || echo "No logs found"
+          echo ""
+          echo "=== Campaign Service Logs ==="
+          cat campaign-service/campaign-service.log || echo "No logs found"
+          echo ""
+          echo "=== Pledge Service Logs ==="
+          cat pledge-service/pledge-service.log || echo "No logs found"
+          echo ""
+          echo "=== Mock PG Service Logs ==="
+          cat mock-pg-service/mock-pg-service.log || echo "No logs found"
+
+      - name: Stop services
+        if: always()
+        run: |
+          for service in payment-service campaign-service pledge-service mock-pg-service; do
+            if [ -f $service/${service}.pid ]; then
+              kill $(cat $service/${service}.pid) || true
+            fi
+          done
+
+  docker-compose-test:
+    name: Docker Compose E2E Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build all services
+        run: |
+          for service in api-gateway payment-service campaign-service pledge-service mock-pg-service; do
+            echo "Building $service..."
+            cd $service
+            mvn clean package -DskipTests -B
+            cd ..
+          done
+
+      - name: Start infrastructure with Docker Compose
+        run: docker compose -f docker-compose-infra.yml up -d
+
+      - name: Wait for infrastructure
+        run: |
+          echo "Waiting for infrastructure to be ready..."
+          sleep 30
+
+      - name: Build and start application services
+        run: docker compose up -d --build api-gateway payment-service campaign-service pledge-service mock-pg-service
+
+      - name: Wait for services to be ready
+        run: |
+          echo "Waiting for services to start..."
+          sleep 60
+
+          # Check health endpoints
+          for i in {1..30}; do
+            if curl -f http://localhost:8080/actuator/health && \
+               curl -f http://localhost:8081/api/v1/payment/health && \
+               curl -f http://localhost:8082/api/v1/campaign/health && \
+               curl -f http://localhost:8083/api/v1/pledge/health && \
+               curl -f http://localhost:8084/api/v1/mock-gateway/health; then
+              echo "All services are healthy!"
+              exit 0
+            fi
+            echo "Waiting for services... attempt $i/30"
+            sleep 5
+          done
+          echo "Services failed to start"
+          docker compose logs
+          exit 1
+
+      - name: Run E2E tests
+        run: |
+          chmod +x test-e2e.sh
+          ./test-e2e.sh
+
+      - name: Display service logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Stop services
+        if: always()
+        run: docker compose down -v

@@ -1,8 +1,11 @@
 package com.careforall.pledge.service;
 
 import com.careforall.pledge.config.RabbitMQConfig;
+import com.careforall.pledge.dto.PledgeCreatedEvent;
 import com.careforall.pledge.entity.OutboxEvent;
 import com.careforall.pledge.repository.OutboxEventRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -30,6 +33,13 @@ public class OutboxPublisher {
 
     private final OutboxEventRepository outboxEventRepository;
     private final RabbitTemplate rabbitTemplate;
+    private final ObjectMapper objectMapper;
+
+    @PostConstruct
+    public void init() {
+        log.info("OutboxPublisher initialized and ready to publish events to RabbitMQ");
+        log.info("Polling interval: ${outbox.polling.interval:2000}ms");
+    }
 
     /**
      * Poll outbox events every 2 seconds
@@ -38,29 +48,36 @@ public class OutboxPublisher {
     @Scheduled(fixedDelayString = "${outbox.polling.interval:2000}")
     @Transactional
     public void publishOutboxEvents() {
-        // Find all unpublished events
-        List<OutboxEvent> unpublishedEvents = outboxEventRepository.findUnpublishedEvents();
+        try {
+            log.debug("OutboxPublisher polling for unpublished events...");
 
-        if (unpublishedEvents.isEmpty()) {
-            return;
-        }
+            // Find all unpublished events
+            List<OutboxEvent> unpublishedEvents = outboxEventRepository.findUnpublishedEvents();
 
-        log.info("Found {} unpublished events to process", unpublishedEvents.size());
+            if (unpublishedEvents.isEmpty()) {
+                log.debug("No unpublished events found");
+                return;
+            }
 
-        for (OutboxEvent event : unpublishedEvents) {
-            try {
-                publishEvent(event);
-            } catch (Exception e) {
-                log.error("Failed to publish event {}: {}", event.getId(), e.getMessage());
-                // Increment retry count
-                event.setRetryCount(event.getRetryCount() + 1);
-                outboxEventRepository.save(event);
+            log.info("Found {} unpublished events to process", unpublishedEvents.size());
 
-                // If retries exceed threshold, could add logic to move to DLQ
-                if (event.getRetryCount() > 10) {
-                    log.error("Event {} exceeded max retries, manual intervention required", event.getId());
+            for (OutboxEvent event : unpublishedEvents) {
+                try {
+                    publishEvent(event);
+                } catch (Exception e) {
+                    log.error("Failed to publish event {}: {}", event.getId(), e.getMessage());
+                    // Increment retry count
+                    event.setRetryCount(event.getRetryCount() + 1);
+                    outboxEventRepository.save(event);
+
+                    // If retries exceed threshold, could add logic to move to DLQ
+                    if (event.getRetryCount() > 10) {
+                        log.error("Event {} exceeded max retries, manual intervention required", event.getId());
+                    }
                 }
             }
+        } catch (Exception e) {
+            log.error("Error in OutboxPublisher scheduled task: {}", e.getMessage(), e);
         }
     }
 
@@ -70,19 +87,20 @@ public class OutboxPublisher {
     private void publishEvent(OutboxEvent event) {
         String routingKey = determineRoutingKey(event.getEventType());
 
-        log.debug("Publishing event {} to exchange {} with routing key {}",
+        log.info("Publishing event {} to exchange {} with routing key {}",
                 event.getId(), RabbitMQConfig.PLEDGE_EXCHANGE, routingKey);
 
         // Publish to RabbitMQ
         try {
-            // Deserialize payload to Map to avoid double serialization
-            java.util.Map<String, Object> payloadMap = new com.fasterxml.jackson.databind.ObjectMapper()
-                    .readValue(event.getPayload(), java.util.Map.class);
+            // Deserialize payload to the actual event type for proper serialization
+            PledgeCreatedEvent pledgeEvent = objectMapper.readValue(
+                    event.getPayload(),
+                    PledgeCreatedEvent.class);
 
             rabbitTemplate.convertAndSend(
                     RabbitMQConfig.PLEDGE_EXCHANGE,
                     routingKey,
-                    payloadMap);
+                    pledgeEvent);
         } catch (Exception e) {
             log.error("Failed to deserialize event payload: {}", event.getPayload(), e);
             throw new RuntimeException("Failed to publish event", e);

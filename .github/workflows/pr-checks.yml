@@ -1,0 +1,132 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  pr-validation:
+    name: PR Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Check commit messages
+        run: |
+          echo "Checking commit messages..."
+          git log --format=%B origin/${{ github.base_ref }}..${{ github.sha }} | grep -v '^$' || true
+
+      - name: Check for breaking changes
+        run: |
+          echo "Checking for breaking changes in API contracts..."
+          git diff origin/${{ github.base_ref }} -- '**/controller/**/*.java' '**/dto/**/*.java' || true
+
+      - name: Validate Maven POMs
+        run: |
+          for service in api-gateway payment-service campaign-service pledge-service mock-pg-service; do
+            echo "Validating $service/pom.xml..."
+            cd $service
+            mvn validate -B
+            cd ..
+          done
+
+      - name: Check code formatting
+        run: |
+          for service in api-gateway payment-service campaign-service pledge-service mock-pg-service; do
+            echo "Checking code formatting for $service..."
+            cd $service
+            # Add your formatting checks here (e.g., Spotless, Checkstyle)
+            cd ..
+          done
+
+  dependency-check:
+    name: Dependency Security Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Run OWASP Dependency Check
+        run: |
+          for service in api-gateway payment-service campaign-service pledge-service mock-pg-service; do
+            echo "Checking dependencies for $service..."
+            cd $service
+            mvn dependency:tree -B
+            cd ..
+          done
+
+  size-check:
+    name: Check Build Size
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build and check sizes
+        run: |
+          for service in api-gateway payment-service campaign-service pledge-service mock-pg-service; do
+            echo "Building and checking size for $service..."
+            cd $service
+            mvn clean package -DskipTests -B
+            ls -lh target/*.jar
+            cd ..
+          done
+
+      - name: Comment PR with build sizes
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const fs = require('fs');
+            const services = ['api-gateway', 'payment-service', 'campaign-service', 'pledge-service', 'mock-pg-service'];
+            let comment = '## Build Artifact Sizes\n\n';
+            comment += '| Service | Size |\n';
+            comment += '|---------|------|\n';
+
+            for (const service of services) {
+              try {
+                const files = fs.readdirSync(`${service}/target`);
+                const jarFile = files.find(f => f.endsWith('.jar') && !f.endsWith('-sources.jar'));
+                if (jarFile) {
+                  const stats = fs.statSync(`${service}/target/${jarFile}`);
+                  const sizeMB = (stats.size / (1024 * 1024)).toFixed(2);
+                  comment += `| ${service} | ${sizeMB} MB |\n`;
+                }
+              } catch (e) {
+                comment += `| ${service} | Error reading size |\n`;
+              }
+            }
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
