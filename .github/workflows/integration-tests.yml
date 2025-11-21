@@ -102,7 +102,8 @@ jobs:
       - name: Start Payment Service
         run: |
           cd payment-service
-          DB_HOST=localhost DB_PORT=5432 REDIS_HOST=localhost RABBITMQ_HOST=localhost \
+          DB_HOST=localhost DB_PORT=5432 DB_NAME=payment_db DB_USER=postgres DB_PASSWORD=postgres \
+          REDIS_HOST=localhost RABBITMQ_HOST=localhost RABBITMQ_USER=guest RABBITMQ_PASSWORD=guest \
           nohup java -jar target/payment-service-1.0.0.jar > payment-service.log 2>&1 &
           echo $! > payment-service.pid
           cd ..
@@ -110,7 +111,8 @@ jobs:
       - name: Start Campaign Service
         run: |
           cd campaign-service
-          DB_HOST=localhost DB_PORT=5433 RABBITMQ_HOST=localhost \
+          DB_HOST=localhost DB_PORT=5433 DB_NAME=campaign_db DB_USER=postgres DB_PASSWORD=postgres \
+          RABBITMQ_HOST=localhost RABBITMQ_USER=guest RABBITMQ_PASSWORD=guest \
           nohup java -jar target/campaign-service-1.0.0.jar > campaign-service.log 2>&1 &
           echo $! > campaign-service.pid
           cd ..
@@ -118,7 +120,8 @@ jobs:
       - name: Start Pledge Service
         run: |
           cd pledge-service
-          DB_HOST=localhost DB_PORT=5434 RABBITMQ_HOST=localhost \
+          DB_HOST=localhost DB_PORT=5434 DB_NAME=pledge_db DB_USER=postgres DB_PASSWORD=postgres \
+          RABBITMQ_HOST=localhost RABBITMQ_USER=guest RABBITMQ_PASSWORD=guest \
           nohup java -jar target/pledge-service-1.0.0.jar > pledge-service.log 2>&1 &
           echo $! > pledge-service.pid
           cd ..
