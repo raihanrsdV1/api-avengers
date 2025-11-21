@@ -59,20 +59,21 @@ public class OutboxPublisher {
                 return;
             }
 
-        log.info("Found {} unpublished events to process", unpublishedEvents.size());
+            log.info("Found {} unpublished events to process", unpublishedEvents.size());
 
-        for (OutboxEvent event : unpublishedEvents) {
-            try {
-                publishEvent(event);
-            } catch (Exception e) {
-                log.error("Failed to publish event {}: {}", event.getId(), e.getMessage());
-                // Increment retry count
-                event.setRetryCount(event.getRetryCount() + 1);
-                outboxEventRepository.save(event);
+            for (OutboxEvent event : unpublishedEvents) {
+                try {
+                    publishEvent(event);
+                } catch (Exception e) {
+                    log.error("Failed to publish event {}: {}", event.getId(), e.getMessage());
+                    // Increment retry count
+                    event.setRetryCount(event.getRetryCount() + 1);
+                    outboxEventRepository.save(event);
 
-                // If retries exceed threshold, could add logic to move to DLQ
-                if (event.getRetryCount() > 10) {
-                    log.error("Event {} exceeded max retries, manual intervention required", event.getId());
+                    // If retries exceed threshold, could add logic to move to DLQ
+                    if (event.getRetryCount() > 10) {
+                        log.error("Event {} exceeded max retries, manual intervention required", event.getId());
+                    }
                 }
             }
         } catch (Exception e) {
