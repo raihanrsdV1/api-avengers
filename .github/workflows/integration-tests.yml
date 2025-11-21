@@ -102,31 +102,24 @@ jobs:
       - name: Start Payment Service
         run: |
           cd payment-service
-          nohup java -jar target/payment-service-1.0.0.jar \
-            --DB_HOST=localhost \
-            --DB_PORT=5432 \
-            --REDIS_HOST=localhost \
-            --RABBITMQ_HOST=localhost > payment-service.log 2>&1 &
+          DB_HOST=localhost DB_PORT=5432 REDIS_HOST=localhost RABBITMQ_HOST=localhost \
+          nohup java -jar target/payment-service-1.0.0.jar > payment-service.log 2>&1 &
           echo $! > payment-service.pid
           cd ..
 
       - name: Start Campaign Service
         run: |
           cd campaign-service
-          nohup java -jar target/campaign-service-1.0.0.jar \
-            --DB_HOST=localhost \
-            --DB_PORT=5433 \
-            --RABBITMQ_HOST=localhost > campaign-service.log 2>&1 &
+          DB_HOST=localhost DB_PORT=5433 RABBITMQ_HOST=localhost \
+          nohup java -jar target/campaign-service-1.0.0.jar > campaign-service.log 2>&1 &
           echo $! > campaign-service.pid
           cd ..
 
       - name: Start Pledge Service
         run: |
           cd pledge-service
-          nohup java -jar target/pledge-service-1.0.0.jar \
-            --DB_HOST=localhost \
-            --DB_PORT=5434 \
-            --RABBITMQ_HOST=localhost > pledge-service.log 2>&1 &
+          DB_HOST=localhost DB_PORT=5434 RABBITMQ_HOST=localhost \
+          nohup java -jar target/pledge-service-1.0.0.jar > pledge-service.log 2>&1 &
           echo $! > pledge-service.pid
           cd ..
 
@@ -160,17 +153,20 @@ jobs:
       - name: Run integration tests
         run: |
           chmod +x test-e2e.sh
-          ./test-e2e.sh || true
+          ./test-e2e.sh
 
-      - name: Display service logs on failure
-        if: failure()
+      - name: Display service logs
+        if: always()
         run: |
           echo "=== Payment Service Logs ==="
           cat payment-service/payment-service.log || echo "No logs found"
+          echo ""
           echo "=== Campaign Service Logs ==="
           cat campaign-service/campaign-service.log || echo "No logs found"
+          echo ""
           echo "=== Pledge Service Logs ==="
           cat pledge-service/pledge-service.log || echo "No logs found"
+          echo ""
           echo "=== Mock PG Service Logs ==="
           cat mock-pg-service/mock-pg-service.log || echo "No logs found"
 
