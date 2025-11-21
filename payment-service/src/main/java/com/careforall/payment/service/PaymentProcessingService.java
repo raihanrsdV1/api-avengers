@@ -80,14 +80,24 @@ public class PaymentProcessingService {
      */
     @Transactional
     public void handleWebhook(Map<String, Object> webhookData) {
+        log.info("Processing webhook with data: {}", webhookData);
+
         String paymentGatewayId = (String) webhookData.get("paymentGatewayId");
         String status = (String) webhookData.get("status");
+
+        if (paymentGatewayId == null || paymentGatewayId.isEmpty()) {
+            log.error("Webhook missing paymentGatewayId. Full webhook data: {}", webhookData);
+            throw new IllegalArgumentException("Webhook missing paymentGatewayId");
+        }
 
         log.info("Processing webhook for gateway ID: {}, status: {}", paymentGatewayId, status);
 
         Payment payment = paymentRepository.findByPaymentGatewayId(paymentGatewayId)
-                .orElseThrow(
-                        () -> new IllegalArgumentException("Payment not found for gateway ID: " + paymentGatewayId));
+                .orElseThrow(() -> {
+                    log.error("Payment not found for gateway ID: {}. Available payments: {}",
+                            paymentGatewayId, paymentRepository.findAll().size());
+                    return new IllegalArgumentException("Payment not found for gateway ID: " + paymentGatewayId);
+                });
 
         PaymentStatus newStatus = "CAPTURED".equals(status) ? PaymentStatus.CAPTURED : PaymentStatus.FAILED;
         payment.setStatus(newStatus);
