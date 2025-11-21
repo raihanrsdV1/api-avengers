@@ -28,7 +28,7 @@ public class PaymentGatewayService {
         try {
             PaymentGatewayRequest request = PaymentGatewayRequest.builder()
                     .pledgeId(payment.getPledgeId())
-                    .amount(payment.getAmount())
+                    .amount(payment.getAmount().doubleValue())
                     .campaignId(payment.getCampaignId())
                     .userId(payment.getUserId())
                     .build();

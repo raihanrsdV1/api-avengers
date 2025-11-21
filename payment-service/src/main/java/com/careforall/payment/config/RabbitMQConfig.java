@@ -11,6 +11,9 @@ public class RabbitMQConfig {
     public static final String PLEDGE_CREATED_QUEUE = "pledge.created.queue";
 
     public static final String DONATION_EXCHANGE = "donation.exchange";
+    public static final String DONATION_CAPTURED_ROUTING_KEY = "donation.captured";
+    public static final String DONATION_AUTHORIZED_ROUTING_KEY = "donation.authorized";
+    public static final String DONATION_FAILED_ROUTING_KEY = "donation.failed";
 
     @Bean
     public Queue pledgeCreatedQueue() {
